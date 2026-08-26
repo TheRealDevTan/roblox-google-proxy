@@ -10,38 +10,33 @@ const SERPAPI_KEYS = [
     "48cf8c206a5f74404d64becf284af429b904f57759531a61da10fe1931867b65"
 ];
 
-// Tracks which key we are currently using (0, 1, or 2)
 let currentKeyIndex = 0;
 
-app.get('/search', async (req, res) => {
-    const query = req.query.q;
-    if (!query) return res.status(400).json({ error: "Missing query parameter 'q'" });
+async function tryDuckDuckGo(query) {
+    try {
+        const response = await axios.get(`https://duckduckgo.com{encodeURIComponent(query)}&format=json`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        });
+        const answer = response.data.AbstractText || response.data.Definition;
+        return answer || null;
+    } catch (e) {
+        return null;
+    }
+}
 
-    // Try up to 3 times (once for each key) if a key fails or runs out of credits
+async function trySerpApi(query) {
     for (let attempts = 0; attempts < SERPAPI_KEYS.length; attempts++) {
         const activeKey = SERPAPI_KEYS[currentKeyIndex];
-        
         try {
-            console.log(`Attempting search with API Key index: ${currentKeyIndex}`);
-            
             const response = await axios.get(`https://serpapi.com`, {
-                params: {
-                    q: query,
-                    engine: "google",
-                    api_key: activeKey,
-                    hl: "en",
-                    gl: "us"
-                }
+                params: { q: query, engine: "google", api_key: activeKey, hl: "en", gl: "us" }
             });
 
-            // Check if this specific key has run out of credits
             if (response.data.error && response.data.error.includes("unauthorized_or_no_credits")) {
-                throw new Error("Key ran out of credits");
+                throw new Error("Credits exhausted");
             }
 
-            // --- PROCESS THE GOOGLE DATA ---
             let compiledContext = "";
-
             if (response.data.answer_box && response.data.answer_box.answer) {
                 compiledContext += `Direct Answer: ${response.data.answer_box.answer}\n`;
             } else if (response.data.answer_box && response.data.answer_box.snippet) {
@@ -57,22 +52,58 @@ app.get('/search', async (req, res) => {
                     }
                 });
             }
-
-            if (!compiledContext) compiledContext = "No relevant web summaries found.";
-
-            // If successful, send the response back to Roblox and stop the loop
-            return res.json({ answer: compiledContext });
-
+            return compiledContext || null;
         } catch (error) {
-            console.warn(`Key index ${currentKeyIndex} failed. Moving to fallback...`);
-            
-            // ROUTE TO NEXT KEY: Cycles between 0, 1, and 2
-            currentKeyIndex = (currentKeyIndex + 1) % SERPAPI_KEYS.length;
+            currentKeyIndex = (currentKeyIndex + 1) % SERPAPI_KEYS.length; // Key rotation
         }
     }
+    return null;
+}
 
-    // If the loop finishes and ALL 3 keys failed
-    res.status(500).json({ error: "All 3 SerpApi keys have run out of free monthly credits!" });
+app.get('/search', async (req, res) => {
+    const query = req.query.q;
+    if (!query) return res.status(400).json({ error: "Missing query parameter 'q'" });
+
+    const cleanQuery = query.trim().replace(/[?.,!]/g, ""); // Clean punctuation
+    const lowerQuery = cleanQuery.toLowerCase();
+    const words = lowerQuery.split(/\s+/);
+    const wordCount = words.length;
+
+    // 🔬 ADVANCED MULTI-LAYERED DECISION LOGIC
+    let forceComplex = false;
+
+    // Layer 1: Complex Intent Word Scan (Anywhere in the sentence)
+    const complexKeywords = ["how", "why", "where", "best", "top", "review", "address", "menu", "restaurant", "eat", "places", "near", "versus", "vs", "difference", "compare", "list", "guide", "step"];
+    const hasComplexKeyword = complexKeywords.some(keyword => words.includes(keyword));
+
+    // Layer 2: Specific Phrase Matching for Simple Definitions
+    const simpleStartPhrases = ["what is", "who is", "define", "meaning of", "when did", "when was", "birthday of"];
+    const startsWithSimplePhrase = simpleStartPhrases.some(phrase => lowerQuery.startsWith(phrase));
+
+    // Decision Grid Evaluation
+    if (hasComplexKeyword) forceComplex = true;     // "How do I do X" -> Google
+    if (wordCount > 6) forceComplex = true;          // Multi-clause sentences -> Google
+    if (!startsWithSimplePhrase) forceComplex = true;// Shorthand complex lookups -> Google
+
+    // Routing Execution
+    if (!forceComplex) {
+        console.log(`[Smart Router] SIMPLE intent verified. Routing to DuckDuckGo: "${query}"`);
+        const ddgAnswer = await tryDuckDuckGo(query);
+        
+        if (ddgAnswer) {
+            return res.json({ answer: `[Source: DuckDuckGo Quick Fact]\n${ddgAnswer}` });
+        }
+        console.log("[Smart Router] DuckDuckGo missed. Automatically falling back to Google...");
+    }
+
+    console.log(`[Smart Router] COMPLEX intent verified. Routing to GOOGLE: "${query}"`);
+    const googleAnswer = await trySerpApi(query);
+
+    if (googleAnswer) {
+        return res.json({ answer: googleAnswer });
+    }
+
+    res.status(500).json({ error: "No reliable data could be scraped from either engine." });
 });
 
-app.listen(PORT, () => console.log(`Smart 3-Key Rotating Proxy running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Advanced Smart Router Proxy running on port ${PORT}`));
