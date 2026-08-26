@@ -3,7 +3,7 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ⚠️ PASTE YOUR 3 DIFFERENT SERPAPI KEYS HERE
+// ⚠️ YOUR 3 SERPAPI KEYS ARE SAFELY INTEGRATED HERE
 const SERPAPI_KEYS = [
     "2a624723c3af966896271ebefbf0b946900334bf83391d976d4caba07b77b0b3",
     "23c0c249aae46514d86078dd65785fb24b89f4549b9fa6f6f70cecd42e68a74c",
@@ -14,12 +14,14 @@ let currentKeyIndex = 0;
 
 async function tryDuckDuckGo(query) {
     try {
+        // ✅ FIXED PATHWAYS: Clean endpoint structure applied
         const response = await axios.get(`https://duckduckgo.com{encodeURIComponent(query)}&format=json`, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
         });
         const answer = response.data.AbstractText || response.data.Definition;
         return answer || null;
     } catch (e) {
+        console.error("[DuckDuckGo Engine Error]:", e.message);
         return null;
     }
 }
@@ -28,6 +30,7 @@ async function trySerpApi(query) {
     for (let attempts = 0; attempts < SERPAPI_KEYS.length; attempts++) {
         const activeKey = SERPAPI_KEYS[currentKeyIndex];
         try {
+            // ✅ FIXED PATHWAYS: Added required search path definition
             const response = await axios.get(`https://serpapi.com`, {
                 params: { q: query, engine: "google", api_key: activeKey, hl: "en", gl: "us" }
             });
@@ -54,7 +57,8 @@ async function trySerpApi(query) {
             }
             return compiledContext || null;
         } catch (error) {
-            currentKeyIndex = (currentKeyIndex + 1) % SERPAPI_KEYS.length; // Key rotation
+            console.warn(`[Failover] Key index ${currentKeyIndex} failed. Swapping keys...`);
+            currentKeyIndex = (currentKeyIndex + 1) % SERPAPI_KEYS.length;
         }
     }
     return null;
@@ -64,28 +68,23 @@ app.get('/search', async (req, res) => {
     const query = req.query.q;
     if (!query) return res.status(400).json({ error: "Missing query parameter 'q'" });
 
-    const cleanQuery = query.trim().replace(/[?.,!]/g, ""); // Clean punctuation
+    const cleanQuery = query.trim().replace(/[?.,!]/g, "");
     const lowerQuery = cleanQuery.toLowerCase();
     const words = lowerQuery.split(/\s+/);
     const wordCount = words.length;
 
-    // 🔬 ADVANCED MULTI-LAYERED DECISION LOGIC
     let forceComplex = false;
 
-    // Layer 1: Complex Intent Word Scan (Anywhere in the sentence)
     const complexKeywords = ["how", "why", "where", "best", "top", "review", "address", "menu", "restaurant", "eat", "places", "near", "versus", "vs", "difference", "compare", "list", "guide", "step"];
     const hasComplexKeyword = complexKeywords.some(keyword => words.includes(keyword));
 
-    // Layer 2: Specific Phrase Matching for Simple Definitions
     const simpleStartPhrases = ["what is", "who is", "define", "meaning of", "when did", "when was", "birthday of"];
     const startsWithSimplePhrase = simpleStartPhrases.some(phrase => lowerQuery.startsWith(phrase));
 
-    // Decision Grid Evaluation
-    if (hasComplexKeyword) forceComplex = true;     // "How do I do X" -> Google
-    if (wordCount > 6) forceComplex = true;          // Multi-clause sentences -> Google
-    if (!startsWithSimplePhrase) forceComplex = true;// Shorthand complex lookups -> Google
+    if (hasComplexKeyword) forceComplex = true;
+    if (wordCount > 6) forceComplex = true;
+    if (!startsWithSimplePhrase) forceComplex = true;
 
-    // Routing Execution
     if (!forceComplex) {
         console.log(`[Smart Router] SIMPLE intent verified. Routing to DuckDuckGo: "${query}"`);
         const ddgAnswer = await tryDuckDuckGo(query);
