@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 const SERPAPI_KEYS = (process.env.SERPAPI_KEYS || "")
   .split(",")
@@ -14,7 +14,7 @@ let currentKeyIndex = 0;
 const http = axios.create({
   timeout: 15000,
   headers: {
-    "User-Agent": "BloxAI-Search-Proxy/2.0"
+    "User-Agent": "BloxAI Search Proxy/2.0"
   }
 });
 
@@ -26,15 +26,21 @@ function clean(text) {
 }
 
 function uniqueResults(results) {
-  return [...new Set(results.map(clean).filter(x => x.length >= 25))];
+  return [...new Set(
+    results
+      .map(clean)
+      .filter(result => result.length >= 25)
+  )];
 }
 
-function getDuckTopics(topics = [], output = []) {
-  for (const topic of topics) {
-    if (topic.Text) output.push(topic.Text);
+function collectDuckDuckGoTopics(topics, output = []) {
+  for (const topic of topics || []) {
+    if (topic.Text) {
+      output.push(topic.Text);
+    }
 
     if (topic.Topics) {
-      getDuckTopics(topic.Topics, output);
+      collectDuckDuckGoTopics(topic.Topics, output);
     }
   }
 
@@ -43,27 +49,41 @@ function getDuckTopics(topics = [], output = []) {
 
 async function tryDuckDuckGo(query) {
   try {
-    const response = await http.get("https://api.duckduckgo.com/", {
-      params: {
-        q: query,
-        format: "json",
-        no_html: 1,
-        skip_disambig: 0
+    const response = await http.get(
+      "https://api.duckduckgo.com/",
+      {
+        params: {
+          q: query,
+          format: "json",
+          no_html: 1,
+          skip_disambig: 0
+        }
       }
-    });
+    );
 
     const data = response.data;
     const results = [];
 
-    if (data.AbstractText) results.push(data.AbstractText);
-    if (data.Answer) results.push(data.Answer);
-    if (data.Definition) results.push(data.Definition);
+    if (data.AbstractText) {
+      results.push(data.AbstractText);
+    }
 
-    results.push(...getDuckTopics(data.RelatedTopics));
+    if (data.Answer) {
+      results.push(data.Answer);
+    }
+
+    if (data.Definition) {
+      results.push(data.Definition);
+    }
+
+    results.push(
+      ...collectDuckDuckGoTopics(data.RelatedTopics)
+    );
 
     const usable = uniqueResults(results);
 
     if (usable.length > 0) {
+      console.log("[DuckDuckGo] Successful search.");
       return usable.slice(0, 5).join("\n\n");
     }
 
@@ -74,7 +94,7 @@ async function tryDuckDuckGo(query) {
   }
 }
 
-async function trySerpApi(query) {
+async function trySerpAPI(query) {
   if (SERPAPI_KEYS.length === 0) {
     console.error("[SerpAPI] No keys configured.");
     return null;
@@ -109,19 +129,28 @@ async function trySerpApi(query) {
       if (data.answer_box) {
         const box = data.answer_box;
 
-        if (box.answer) results.push(box.answer);
-        if (box.snippet) results.push(box.snippet);
-        if (box.description) results.push(box.description);
+        if (box.answer) {
+          results.push(box.answer);
+        }
+
+        if (box.snippet) {
+          results.push(box.snippet);
+        }
+
+        if (box.description) {
+          results.push(box.description);
+        }
       }
 
       if (data.knowledge_graph?.description) {
         results.push(data.knowledge_graph.description);
       }
 
-      for (const item of data.organic_results || []) {
-        if (item.snippet) {
+      for (const result of data.organic_results || []) {
+        if (result.snippet) {
           results.push(
-            `${item.snippet}\nSource: ${item.link || ""}`
+            result.snippet +
+            (result.link ? "\nSource: " + result.link : "")
           );
         }
       }
@@ -136,7 +165,7 @@ async function trySerpApi(query) {
       throw new Error("No usable SerpAPI results");
     } catch (error) {
       console.error(
-        `[SerpAPI] Key ${currentKeyIndex} failed:`,
+        "[SerpAPI] Key " + currentKeyIndex + " failed:",
         error.message
       );
 
@@ -148,44 +177,52 @@ async function trySerpApi(query) {
   return null;
 }
 
-app.get("/search", async (req, res) => {
-  const query = clean(req.query.q);
-
-  if (!query) {
-    return res.status(400).json({
-      error: "Missing query parameter: q"
-    });
-  }
-
-  console.log("[Search]", query);
-
-  // Always try DuckDuckGo first.
-  let answer = await tryDuckDuckGo(query);
-  let provider = "DuckDuckGo";
-
-  // SerpAPI receives the complete original question.
-  if (!answer) {
-    answer = await trySerpApi(query);
-    provider = "SerpAPI";
-  }
-
-  if (!answer) {
-    return res.status(502).json({
-      error: "Search providers returned no usable answer"
-    });
-  }
-
-  return res.json({
-    answer,
-    provider,
-    query
-  });
-});
-
 app.get("/", (req, res) => {
   res.send("BloxAI search proxy is running.");
 });
 
-app.listen(PORT, () => {
-  console.log(`BloxAI search proxy running on port ${PORT}`);
+app.get("/search", async (req, res) => {
+  try {
+    const query = clean(req.query.q);
+
+    if (!query) {
+      return res.status(400).json({
+        error: "Missing query parameter: q"
+      });
+    }
+
+    console.log("[Search]", query);
+
+    let answer = await tryDuckDuckGo(query);
+    let provider = "DuckDuckGo";
+
+    if (!answer) {
+      answer = await trySerpAPI(query);
+      provider = "SerpAPI";
+    }
+
+    if (!answer) {
+      return res.status(502).json({
+        error: "Search providers returned no usable answer"
+      });
+    }
+
+    return res.json({
+      answer: answer,
+      provider: provider,
+      query: query
+    });
+  } catch (error) {
+    console.error("[Proxy Error]", error);
+
+    return res.status(500).json({
+      error: "Internal proxy error"
+    });
+  }
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    "BloxAI search proxy running on port " + PORT
+  );
 });
