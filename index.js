@@ -29,8 +29,15 @@ async function tryDuckDuckGo(query) {
 async function trySerpApi(query) {
     for (let attempts = 0; attempts < SERPAPI_KEYS.length; attempts++) {
         const activeKey = SERPAPI_KEYS[currentKeyIndex];
+        
+        // Skip placeholder strings safely to prevent a crash
+        if (!activeKey || activeKey.includes("YOUR_") || activeKey.includes("PASTE_")) {
+            console.warn(`[Key Shield] Skipped empty or placeholder key at index ${currentKeyIndex}`);
+            currentKeyIndex = (currentKeyIndex + 1) % SERPAPI_KEYS.length;
+            continue;
+        }
+
         try {
-            // ✅ FIXED PATHWAYS: Added required search path definition
             const response = await axios.get(`https://serpapi.com`, {
                 params: { q: query, engine: "google", api_key: activeKey, hl: "en", gl: "us" }
             });
@@ -57,7 +64,7 @@ async function trySerpApi(query) {
             }
             return compiledContext || null;
         } catch (error) {
-            console.warn(`[Failover] Key index ${currentKeyIndex} failed. Swapping keys...`);
+            console.error(`[Router Failover] Key index ${currentKeyIndex} failed. Rotating...`);
             currentKeyIndex = (currentKeyIndex + 1) % SERPAPI_KEYS.length;
         }
     }
