@@ -1,9 +1,12 @@
 {
-  "name": "roblox-google-proxy",
-  "version": "1.0.0",
+  "name": "bloxai-search-proxy",
+  "version": "2.0.0",
   "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
-    "express": "^4.19.2",
-    "axios": "^1.6.8"
+    "axios": "^1.6.8",
+    "express": "^4.19.2"
   }
 }
