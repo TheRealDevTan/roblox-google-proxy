@@ -4,10 +4,11 @@ const axios = require("axios");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const SERPAPI_KEYS = (process.env.SERPAPI_KEYS || "")
-  .split(",")
-  .map(key => key.trim())
-  .filter(Boolean);
+const SERPAPI_KEYS = [
+  "2a624723c3af966896271ebefbf0b946900334bf83391d976d4caba07b77b0b3",
+  "23c0c249aae46514d86078dd65785fb24b89f4549b9fa6f6f70cecd42e68a74c",
+  "48cf8c206a5f74404d64becf284af429b904f57759531a61da10fe1931867b65"
+];
 
 let currentKeyIndex = 0;
 
