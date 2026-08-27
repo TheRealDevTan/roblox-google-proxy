@@ -14,17 +14,20 @@ let currentKeyIndex = 0;
 
 async function tryDuckDuckGo(query) {
     try {
-        // ✅ FIXED PATHWAYS: Clean endpoint structure applied
-        const response = await axios.get(`https://duckduckgo.com{encodeURIComponent(query)}&format=json`, {
+        // 🛠️ FIXED: Standardized concatenation syntax string format
+        const targetUrl = `https://duckduckgo.com{encodeURIComponent(query)}&format=json`;
+        
+        const response = await axios.get(targetUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
         });
         const answer = response.data.AbstractText || response.data.Definition;
         return answer || null;
     } catch (e) {
-        console.error("[DuckDuckGo Engine Error]:", e.message);
+        console.error(`[DuckDuckGo Engine Error]: ${e.message}`);
         return null;
     }
 }
+
 
 async function trySerpApi(query) {
     for (let attempts = 0; attempts < SERPAPI_KEYS.length; attempts++) {
